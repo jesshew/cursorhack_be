@@ -44,7 +44,7 @@ class ProcessTextRequest(BaseModel):
 class SearchChunksRequest(BaseModel):
     """Request model for searching chunks."""
     query: str
-    match_count: int = 5
+    match_count: int = 10
     filter_metadata: Dict[str, Any] = None
 
 
@@ -102,7 +102,7 @@ async def process_text_from_file(db: Session = Depends(get_db)):
         A summary of the processing results.
     """
     try:
-        file_name = "test_chunk_file.txt"
+        file_name = "recipe.txt"
         
         try:
             with open(file_name, "r", encoding="utf-8") as f:
@@ -269,14 +269,14 @@ async def search_chunks(
         filter_json = request.filter_metadata if request.filter_metadata else {}
         
         supabase = get_supabase_client()
-        # result = supabase.rpc(
-        #     "match_chunks",
-        #     {
-        #         "query_embedding": query_embedding,
-        #         "match_count": request.match_count,
-        #         "filter_metadata": filter_json
-        #     }
-        # ).execute()
+        result = supabase.rpc(
+            "match_chunks",
+            {
+                "query_embedding": query_embedding,
+                "match_count": request.match_count,
+                "filter_metadata": filter_json
+            }
+        ).execute()
         
         return {
             "query": request.query,

@@ -25,15 +25,15 @@ from app.services.rag.utils import (
     split_text_markdown,
     enrich_chunks_with_metadata_and_file,
     generate_embedding,
-    client,
     EMBEDDING_BATCH_SIZE,
 )
+from app.services.openai_service import openai_session
 
 # Configuration
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 MAX_RETRIES = 3
-RETRY_DELAY = 2
-BATCH_SIZE = 100
+RETRY_DELAY = 5
+BATCH_SIZE = 30
 
 
 class TextFileRAGProcessor:
@@ -66,20 +66,23 @@ class TextFileRAGProcessor:
 
         start_time = time.time()
 
-        # Split texts into batches for parallel processing
+        # Split texts into batches for sequential processing
         batches = [texts[i:i + EMBEDDING_BATCH_SIZE] for i in range(0, len(texts), EMBEDDING_BATCH_SIZE)]
+        all_embeddings = []
 
-        def process_batch_sync(batch: List[str]) -> List[List[float]]:
-            """Synchronous batch processing function for thread pool using OpenAI batch API."""
+        for i, batch in enumerate(batches):
+            logger.info(f"Processing batch {i+1}/{len(batches)} for embeddings")
             try:
-                response = client.embeddings.create(
-                    input=batch,
-                    model=DEFAULT_EMBEDDING_MODEL
-                )
-                return [item.embedding for item in response.data]
+                with openai_session() as client:
+                    response = client.embeddings.create(
+                        input=batch,
+                        model=DEFAULT_EMBEDDING_MODEL
+                    )
+                    batch_embeddings = [item.embedding for item in response.data]
+                    all_embeddings.extend(batch_embeddings)
             except Exception as e:
-                logger.error(f"Error generating batch embeddings: {str(e)}")
-                # Fallback to individual generation
+                logger.error(f"Error generating batch embeddings for batch {i+1}: {str(e)}")
+                # Fallback to individual generation for this batch
                 batch_embeddings = []
                 for text in batch:
                     try:
@@ -88,22 +91,12 @@ class TextFileRAGProcessor:
                     except Exception as inner_e:
                         logger.error(f"Error generating individual embedding: {str(inner_e)}")
                         batch_embeddings.append([0.0] * 1536)  # Fallback embedding
-                return batch_embeddings
+                all_embeddings.extend(batch_embeddings)
 
-        # Process batches concurrently using thread pool
-        loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            tasks = [
-                loop.run_in_executor(executor, process_batch_sync, batch)
-                for batch in batches
-            ]
-
-            batch_results = await asyncio.gather(*tasks)
-
-        # Flatten results
-        all_embeddings = []
-        for batch_embeddings in batch_results:
-            all_embeddings.extend(batch_embeddings)
+            # Wait for 5 seconds between batches, but not after the last one
+            if i < len(batches) - 1:
+                logger.info("Waiting 5 seconds before next batch...")
+                await asyncio.sleep(5)
 
         end_time = time.time()
         logger.info(f"Generated {len(all_embeddings)} embeddings in {end_time - start_time:.2f} seconds")

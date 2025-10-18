@@ -16,7 +16,6 @@ from typing import List, Any, Optional
 from contextlib import contextmanager, asynccontextmanager
 
 import openai
-from openai import OpenAI
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from logging import getLogger
@@ -24,6 +23,7 @@ from logging import getLogger
 from app.services.rag.markdown_splitter import process_markdown_text
 from app.schemas.db.file import FileDB
 from app.schemas.rag import EnrichedChunk, ChunkMetadata
+from app.services.groq_service import call_groq_api, async_call_groq_api
 
 
 # Load environment variables
@@ -166,29 +166,35 @@ class ChunkData(BaseModel):
 # OPENAI CLIENT MANAGEMENT
 # ============================================================================
 
-client = OpenAI()
-
-def call_gpt4_mini(prompt: str) -> str:
-    """Call GPT-4 mini with the given prompt."""
+@contextmanager
+def openai_session():
+    """Context manager to properly handle OpenAI API sessions."""
+    client = None
     try:
-        response = client.responses.create(
-            model="gpt-4.1-mini-2025-04-14",
-            input=prompt
-        )
-        return response.output_text
-    except Exception as e:
-        return f"Error generating output: {str(e)}"
+        client = openai.OpenAI()
+        yield client
+    finally:
+        if client is not None and hasattr(client, 'close'):
+            client.close()
 
-async def async_call_gpt4_mini(prompt: str) -> str:
-    """Asynchronously call GPT-4 mini with the given prompt."""
+@asynccontextmanager
+async def async_openai_session():
+    """Context manager to properly handle asynchronous OpenAI API sessions."""
+    client = None
     try:
-        response = await client.responses.create(
-            model="gpt-4.1-mini-2025-04-14",
-            input=prompt
-        )
-        return response.output_text
-    except Exception as e:
-        return f"Error generating output: {str(e)}"
+        client = openai.OpenAI()
+        yield client
+    finally:
+        if client is not None and hasattr(client, 'close'):
+            await client.close()
+
+def call_groq_api_with_prompt(prompt: str) -> str:
+    """Call Groq API with the given prompt."""
+    return call_groq_api(prompt)
+
+async def async_call_groq_api_with_prompt(prompt: str) -> str:
+    """Asynchronously call Groq API with the given prompt."""
+    return await async_call_groq_api(prompt)
 
 # ============================================================================
 # EMBEDDING FUNCTIONS
@@ -208,11 +214,12 @@ def generate_embedding(text: str, model: str = DEFAULT_EMBEDDING_MODEL) -> List[
     retries = 0
     while retries < MAX_RETRIES:
         try:
-            response = client.embeddings.create(
-                input=text,
-                model=model
-            )
-            return response.data[0].embedding
+            with openai_session() as client:
+                response = client.embeddings.create(
+                    input=text,
+                    model=model
+                )
+                return response.data[0].embedding
         except Exception as e:
             retries += 1
             logger.warning(f"Embedding generation failed (attempt {retries}/{MAX_RETRIES}): {str(e)}")
@@ -305,7 +312,7 @@ def get_document_summary(document_text: str, file_info: str):
     # print(f"Prompt: {prompt}")
 
     # replace with agent call, check the enum to use
-    document_summary = call_gpt4_mini(prompt)
+    document_summary = call_groq_api_with_prompt(prompt)
     # document_summary = "This is a placeholder document summary for now"
     print(f"Document summary: {document_summary}")
     time.sleep(3)
@@ -320,7 +327,7 @@ async def _enrich_single_chunk_file_async(
     """Asynchronously enrich a single chunk with metadata."""
     try:
         prompt = create_extraction_prompt(chunk, file_info, document_summary)
-        raw_llm_response = call_gpt4_mini(prompt)
+        raw_llm_response = await async_call_groq_api_with_prompt(prompt)
         
         section_summary_str = raw_llm_response.strip().removeprefix("```json").removesuffix("```").strip()
 
