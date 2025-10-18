@@ -1,0 +1,1 @@
+keep implementation simple, obey SRP, make functions small and function names self explanatory, always reuse function whenever possible and avoid duplicating code;

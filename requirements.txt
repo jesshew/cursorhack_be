@@ -5,3 +5,9 @@ loguru
 supabase
 python-multipart
 docling
+openai
+langchain
+langchain-core
+langchain-text-splitters
+pgvector
+psycopg2-binary

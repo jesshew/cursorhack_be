@@ -1,8 +1,9 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, JSONResponse
 from loguru import logger
 
 from app.services.pdf_conversion_service import convert_pdf_to_markdown
+from app.services.file_processing_service import process_and_upload_pdf
 
 router = APIRouter()
 
@@ -28,3 +29,23 @@ async def convert_pdf(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Error processing file {file.filename}: {e}")
         raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
+
+@router.post("/pdf/upload-and-process")
+async def upload_and_process_pdf(file: UploadFile = File(...)):
+    """
+    Accepts a PDF, extracts content, uploads both to storage, and records metadata.
+    """
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Invalid file type. Only PDFs are accepted.")
+    
+    try:
+        pdf_content = await file.read()
+        logger.info(f"Received PDF for processing: {file.filename}, size: {len(pdf_content)} bytes")
+        
+        result = await process_and_upload_pdf(file, pdf_content, file.filename)
+        
+        return JSONResponse(content=result, status_code=200)
+        
+    except Exception as e:
+        logger.error(f"Error in upload-and-process endpoint for file {file.filename}: {e}")
+        raise HTTPException(status_code=500, detail=f"An error occurred during processing: {e}")
