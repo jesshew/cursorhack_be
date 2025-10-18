@@ -58,3 +58,15 @@ The application includes the following health check endpoints:
 
 -   **Application Status**: `http://127.0.0.1:8000/health/`
 -   **Database Status**: `http://127.0.0.1:8000/health/db`
+## API Endpoints
+
+### Upload File
+
+- **URL**: `/storage/upload`
+- **Method**: `POST`
+- **Description**: Uploads a file to the Supabase storage bucket named `file`. A timestamp will be prepended to the filename to ensure uniqueness.
+- **Form Data**:
+    - `file`: The file to upload.
+
+- **Example using cURL**:
+```
